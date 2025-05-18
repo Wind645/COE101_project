@@ -8,11 +8,11 @@ import torch.nn as nn
 import torch.nn.functional as F
 import multiprocessing
 import os
-from .models import ConvNet3, ConvNet5, ResNet, DenseNet, ViTNet
+from models import ConvNet3, ConvNet5, ResNet, ConvNetMix
 from data_stats_cal import calculate_dataset_stats
-import TransformDataset as TransformDataset
+from TransformDataset import TransformDataset
 import argparse
-import draw_figures as draw_figures
+from draw_figures import draw_figures
 
 '''
 def show_transformed_images(dataset, num_images=5):
@@ -180,10 +180,8 @@ def main(args):
         net = ConvNet5(num_classes=num_classes).to(device)
     elif args.model_name == 'ResNet':
         net = ResNet(num_classes=num_classes).to(device)
-    elif args.model_name == 'DenseNet':
-        net = DenseNet(num_classes=num_classes).to(device)
-    elif args.model_name == 'ViTNet':
-        net = ViTNet(num_classes=num_classes).to(device)
+    elif args.model_name == 'ConvNetMix':
+        net = ConvNetMix(num_classes=num_classes).to(device)
     else:
         raise ValueError('没有这个模型')
     
@@ -197,7 +195,7 @@ def main(args):
     
     # 添加学习率调度器
     scheduler = torch.optim.lr_scheduler.ReduceLROnPlateau(
-        optimizer, mode='max', factor=0.1, patience=3, verbose=True
+        optimizer, mode='max', factor=0.1, patience=3
     )
     
     # 训练模型
@@ -205,7 +203,7 @@ def main(args):
     print("开始训练...")
     
     best_val_acc = 0
-    best_model_path = "./weights/{net}_best_model.pth"
+    best_model_path = "./ckpt/{net}_best_model.pth"
     
     for epoch in range(num_epochs):
         print(f"\nEpoch {epoch+1}/{num_epochs}")
@@ -260,7 +258,7 @@ def main(args):
         plt.show()'''
     
     # 保存最终模型
-    torch.save(net.state_dict(), f"./weights/{net}_final_model.pth")
+    torch.save(net.state_dict(), f"./ckpt/{net}_final_model.pth")
     print("最终模型已保存")
     print("正在画图……")
     draw_figures(epoch_list, train_acc_list, val_acc_list, loss_list, args.model_name)
@@ -271,9 +269,9 @@ if __name__ == "__main__":
     parser = argparse.ArgumentParser(description="训练和评估图像分类模型")
     parser.add_argument("--data_dir", type=str, default="./dataset", help="数据集目录")
     parser.add_argument("--batch_size", type=int, default=32, help="批大小")
-    parser.add_argument("--num_epochs", type=int, default=20, help="训练轮数")
+    parser.add_argument("--num_epochs", type=int, default=50, help="训练轮数")
     parser.add_argument("--learning_rate", type=float, default=0.0015, help="学习率")
-    parser.add_argument("--model_name", type=str, default='ConvNet3', choices=['ConvNet3', 'ConvNet5', 'ResNet', 'DenseNet', 'ViTNet'])
+    parser.add_argument("--model_name", type=str, default='ConvNet3', choices=['ConvNet3', 'ConvNet5', 'ResNet', 'ConvNetMix'], help="模型名称")
     args = parser.parse_args()   
     
     

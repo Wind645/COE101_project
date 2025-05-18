@@ -13,11 +13,18 @@ def draw_figures(epoch_list, train_acc_list, val_acc_list, loss_list, model_name
     })
     sns.set_theme(style='darkgrid')
     
+    '''    
     # 使用系统已有的中文字体
     try:
         font = FontProperties(fname='SimHei')  # 尝试使用黑体
     except:
         font = FontProperties(fname='Microsoft YaHei')  # 如果黑体不可用，尝试使用微软雅黑
+    '''
+    # font_path = '/usr/share/fonts/truetype/arphic/SimHei.ttf'
+    try:
+        font = FontProperties(fname='/usr/share/fonts/opentype/noto/NotoSansCJK-Regular.ttc')
+    except:
+        font = FontProperties()
     
     # 创建2x2布局的子图
     fig, axs = plt.subplots(2, 2, figsize=(16, 12))

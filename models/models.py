@@ -59,6 +59,8 @@ class ConvNet3(nn.Module):
         return out
     def __str__(self):
         return self.__class__.__name__
+    
+
         
 class ConvNet5(nn.Module):
     '''
@@ -207,93 +209,131 @@ class ResNet(nn.Module):
         
     def __str__(self):
         return "ResNet50"
-
-class DenseNet(nn.Module):
-    '''
-    这个模型是基于densenet进行设计的网络
-    '''
-    def __init__(self, num_classes):
-        super().__init__()
-        self.block1 = nn.Sequential(
-            nn.Conv2d(3, 32, kernel_size=3, padding=1),
-            nn.BatchNorm2d(32),
-            nn.ReLU(inplace=True),
-        )
-        
-        self.block2 = nn.Sequential(
-            # 第二个卷积块: 32->64, 32x32 -> 16x16
-            nn.Conv2d(35, 64, kernel_size=3, padding=1),
-            nn.BatchNorm2d(64),
-            nn.ReLU(inplace=True),
-            )
-        self.block3 = nn.Sequential(
-            # 第三个卷积块: 64->128, 16x16 -> 8x8
-            nn.Conv2d(99, 128, kernel_size=3, padding=1),
-            nn.BatchNorm2d(128),
-            nn.ReLU(inplace=True),
-        )
-        
-        self.classifier = nn.Sequential(
-            nn.Dropout(0.5),
-            nn.Linear(128 * 64 * 64, 512),
-            nn.BatchNorm1d(512),
-            nn.ReLU(inplace=True),
-            nn.Dropout(0.5),
-            nn.Linear(512, num_classes)
-        )
     
+    def _initialize_weights(self):
+        for m in self.modules():
+            if isinstance(m, nn.Conv2d):
+                nn.init.kaiming_normal_(m.weight, mode='fan_out', nonlinearity='relu')
+                if m.bias is not None:
+                    nn.init.constant_(m.bias, 0)
+            elif isinstance(m, nn.BatchNorm2d):
+                nn.init.constant_(m.weight, 1)
+                nn.init.constant_(m.bias, 0)
+            elif isinstance(m, nn.Linear):
+                nn.init.normal_(m.weight, 0, 0.01)
+                nn.init.constant_(m.bias, 0)
+    
+    
+class MixBlock(nn.Module):
+    def __init__(self, in_channels, out_channels):
+        super(MixBlock, self).__init__()
+        self.channel1 = nn.Sequential(
+            nn.Conv2d(in_channels, out_channels, kernel_size=1, padding=0),
+            nn.BatchNorm2d(out_channels),
+            nn.ReLU(inplace=True),
+            nn.MaxPool2d(kernel_size=2, stride=2),
+        )
+        self.channel1 = nn.Sequential(
+            nn.Conv2d(in_channels, out_channels, kernel_size=1, padding=0),
+            nn.BatchNorm2d(out_channels),
+            nn.ReLU(inplace=True),
+            nn.MaxPool2d(kernel_size=2, stride=2),
+        )
+        self.channel2 = nn.Sequential(
+            nn.Conv2d(in_channels, out_channels, kernel_size=3, padding=1),
+            nn.BatchNorm2d(out_channels),
+            nn.ReLU(inplace=True),
+            nn.MaxPool2d(kernel_size=2, stride=2),
+        )
+        self.channel3 = nn.Sequential(
+            nn.Conv2d(in_channels, out_channels, kernel_size=5, padding=2),
+            nn.BatchNorm2d(out_channels),
+            nn.ReLU(inplace=True),
+            nn.MaxPool2d(kernel_size=2, stride=2),
+        )
+        # 第四路也用卷积 + 池化，保证输入输出都是 4D
+        self.channel4 = nn.Sequential(
+            nn.Conv2d(in_channels, out_channels, kernel_size=7, padding=3),
+            nn.BatchNorm2d(out_channels),
+            nn.ReLU(inplace=True),
+            nn.MaxPool2d(kernel_size=2, stride=2),
+        )
+        self.fusion = nn.Sequential(
+            nn.Conv2d(out_channels * 4, out_channels, kernel_size=1, padding=0),
+            nn.BatchNorm2d(out_channels),
+            nn.ReLU(inplace=True),
+        )
+        self._initialize_weights()
+        
     def forward(self, x):
-        x1 = self.block1(x)
-        x2 = self.block2(torch.cat([x, x1], dim=1))
-        x3 = self.block3(torch.cat([x, x1, x2], dim=1))
-        x = torch.flatten(x3, 1)  # 扁平化，保留批次维度
-        x = self.classifier(x)
-        return x
-    def __str__(self):
-        return self.__class__.__name__
-    
-class ViTNet(nn.Module):
+        x1 = self.channel1(x)
+        x2 = self.channel2(x)
+        x3 = self.channel3(x)
+        x4 = self.channel4(x)
+        
+        # 在通道维度上拼接
+        x_cat = torch.cat([x1, x2, x3, x4], dim=1)
+        # 融合
+        x_cat = self.fusion(x_cat)
+        
+        return x_cat
+        
+    def _initialize_weights(self):
+        for m in self.modules():
+            if isinstance(m, nn.Conv2d):
+                nn.init.kaiming_normal_(m.weight, mode='fan_out', nonlinearity='relu')
+                if m.bias is not None:
+                    nn.init.constant_(m.bias, 0)
+            elif isinstance(m, nn.BatchNorm2d):
+                nn.init.constant_(m.weight, 1)
+                nn.init.constant_(m.bias, 0)
+            elif isinstance(m, nn.Linear):
+                nn.init.normal_(m.weight, 0, 0.01)
+                nn.init.constant_(m.bias, 0)
+
+class ConvNetMix(nn.Module):
     '''
-    这个模型利用ViT，以transformer为backbone设计的网络
+    多尺度特征融合
     '''
     def __init__(self, num_classes):
         super().__init__()
-        
+        # 特征提取部分
         self.features = nn.Sequential(
-            # 第一个卷积块: 3->32, 64x64 -> 32x32
-            nn.Conv2d(3, 32, kernel_size=3, padding=1),
-            nn.BatchNorm2d(32),
-            nn.ReLU(inplace=True),
-            nn.MaxPool2d(kernel_size=2, stride=2),
-            
-            # 第二个卷积块: 32->64, 32x32 -> 16x16
-            nn.Conv2d(32, 64, kernel_size=3, padding=1),
-            nn.BatchNorm2d(64),
-            nn.ReLU(inplace=True),
-            nn.MaxPool2d(kernel_size=2, stride=2),
-            
-            # 第三个卷积块: 64->128, 16x16 -> 8x8
-            nn.Conv2d(64, 128, kernel_size=3, padding=1),
-            nn.BatchNorm2d(128),
-            nn.ReLU(inplace=True),
-            nn.MaxPool2d(kernel_size=2, stride=2),
-            
-            )
+            MixBlock(3, 32),  # 输入通道数为3，输出通道数为32
+            MixBlock(32, 64),  # 输入通道数为32，输出通道数为64
+            MixBlock(64, 128),  # 输入通道数为64，输出通道数为128
+        )
         
-        self.vit = ViT(8, 4, num_transformer=2)
+        # 分类器部分
         self.classifier = nn.Sequential(
             nn.Dropout(0.5),
-            nn.Linear(5 * 256, 512),
+            nn.Linear(128 * 8 * 8, 512),
             nn.BatchNorm1d(512),
             nn.ReLU(inplace=True),
             nn.Dropout(0.5),
             nn.Linear(512, num_classes)
         )
+        
+        # 初始化权重
+        self._initialize_weights()
         
     def forward(self, x):
         x = self.features(x)
-        x = self.vit(x)
-        x = self.classifier(torch.flatten(x, 1))
+        x = torch.flatten(x, 1)  # 扁平化，保留批次维度
+        x = self.classifier(x)
         return x
+    
+    def _initialize_weights(self):
+        for m in self.modules():
+            if isinstance(m, nn.Conv2d):
+                nn.init.kaiming_normal_(m.weight, mode='fan_out', nonlinearity='relu')
+                if m.bias is not None:
+                    nn.init.constant_(m.bias, 0)
+            elif isinstance(m, nn.BatchNorm2d):
+                nn.init.constant_(m.weight, 1)
+                nn.init.constant_(m.bias, 0)
+            elif isinstance(m, nn.Linear):
+                nn.init.normal_(m.weight, 0, 0.01)
+                nn.init.constant_(m.bias, 0)
     def __str__(self):
         return self.__class__.__name__
